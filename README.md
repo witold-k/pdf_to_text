@@ -46,7 +46,6 @@ merged token database
 - A running GROBID service at:
   `http://localhost:8070/api/processFulltextDocument`
 - `jq` when using the coverage helpers from the `Justfile`.
-- The local `simplelexer` dependency currently expected at `../simplelexer`.
 
 ## Build and test
 
@@ -117,6 +116,7 @@ Despite the repository name, this stage intentionally keeps document structure i
 - Token serialization and filesystem errors are returned to the caller.
 - `token_db` owns token identity and persistence; this repository only prepares data for it.
 - Matrix construction, weighting, SVD, embeddings, and other downstream analysis do not belong here.
+- Consistent test layout: tests live under `tests/`, mirror the relative `src/` hierarchy where relevant, and use the source filename with a `_test.rs` suffix.
 
 ## Status
 

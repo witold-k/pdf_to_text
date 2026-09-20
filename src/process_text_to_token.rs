@@ -6,10 +6,10 @@ use simplelexer::chunkkind::ChunkKind;
 use simplelexer::quotelexer::QuoteLexer;
 
 pub fn tokenize(db: &mut TokenDb, text: &str) -> Result<Vec<u32>> {
-    let mut lexer = QuoteLexer::new(text);
+    let lexer = QuoteLexer::new(text);
 
     lexer
-        .lex()
+        .lex()?
         .into_iter()
         .filter(|c| c.kind != ChunkKind::Whitespace)
         .map(|c| db.insert(c.text).map(|id| id.get()).map_err(Into::into))

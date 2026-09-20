@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
 use roxmltree::{Document, Node};
 use serde::Serialize;
-use std::fs::File;
-use std::io::Read;
 use std::fmt;
 
 const GROBID_URL: &str = "http://localhost:8070/api/processFulltextDocument";
@@ -61,30 +59,22 @@ impl Default for GrobidConverter {
 // ---------------------------------------------------------
 impl GrobidConverter {
     pub fn extract_tei(&self, pdf_path: &str) -> Result<String> {
-        let mut buf = Vec::new();
-        File::open(pdf_path)
+        let form = ureq::unversioned::multipart::Form::new()
+            .file("input", pdf_path)
             .with_context(|| format!("Cannot open {pdf_path}"))?
-            .read_to_end(&mut buf)?;
-
-        let part = reqwest::blocking::multipart::Part::bytes(buf)
-            .file_name(pdf_path.to_string());
-
-        let form = reqwest::blocking::multipart::Form::new()
-            .part("input", part)
             .text("consolidateHeader", "1")
             .text("teiCoordinates", "true")
             .text("generateIDs", "true")
             .text("segmentSentences", "true");
 
-        let client = reqwest::blocking::Client::new();
-        let res = client
-            .post(GROBID_URL)
-            .multipart(form)
-            .send()?
-            .error_for_status()?;
+        let mut response = ureq::post(GROBID_URL)
+            .send(form)
+            .context("GROBID request failed")?;
 
-        let text = res.text()?;
-        Ok(text)
+        response
+            .body_mut()
+            .read_to_string()
+            .context("failed to read GROBID response")
     }
 
     // ---------------------------------------------------------

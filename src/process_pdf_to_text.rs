@@ -1,32 +1,23 @@
+use anyhow::{Context, Result};
 use crate::pdf2json::GrobidConverter;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
-use serde_json::Value;
 
-/// Processes a PDF file and extracts text to a specified output file.
+/// Processes one PDF through GROBID and writes structured JSON.
 ///
-/// # Arguments
-///
-/// * `input` - A reference to the input PDF file path.
-/// * `output` - A reference to the output text file path.
-///
-/// # Returns
-///
-/// * `Result<()>` - Returns `Ok(())` if the operation is successful, otherwise returns an error.
+/// The output contains title, authors, abstract, body sections, and references.
 pub fn process_pdf_to_text(input: &Path, output: &Path) -> Result<()> {
-    println!("PDF -> text: {} -> {}", input.display(), output.display());
+    println!("PDF -> JSON: {} -> {}", input.display(), output.display());
 
     let converter = GrobidConverter::new();
-    let pdf_path = input.display().to_string();
-    let tei: String = converter.extract_tei(&pdf_path)?;
-    let paper: Value = converter.tei_to_json(&tei)?;
-
+    let pdf_path = input.to_string_lossy();
+    let tei = converter.extract_tei(&pdf_path)?;
+    let paper = converter.tei_to_json(&tei)?;
     let json = serde_json::to_string_pretty(&paper)?;
 
-    fs::write(output, json)?;
+    fs::write(output, json)
+        .with_context(|| format!("failed to write {}", output.display()))?;
 
-    println!("Saved text -> {}", output.display());
+    println!("Saved JSON -> {}", output.display());
     Ok(())
 }
-

@@ -11,22 +11,9 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 postcard = { version = "1.1.3", features = ["alloc"] }
 serde_json = "1"
 
-# -- configuration -----------------------------------------------------------
-dotenvy = "0.15"
-
-# -- storage crates ----------------------------------------------------------
-arrayvec = { version = "0.7.6", features = ["serde"] }
-rustc-hash = "2.1"
-
 # -- converters --------------------------------------------------------------
-pdf-extract = "0.12"
 roxmltree = "0.21"
 simplelexer = { version = "0.1.0", path = "../simplelexer" }
-
-# -- math --------------------------------------------------------------------
-ndarray = "0.17"
-simplefield = { version = "0.1.0", git = "https://github.com/witold-k/simplefield" }
-struct_extractors = { version = "0.1.0", git = "https://github.com/witold-k/struct_extractors", rev = "8e769e7ee7dfbf447ef5e3a768bd6b666d09334b" }
 
 # -- fsscan ------------------------------------------------------------------
 fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", rev = "a5920ddf9354b18fa0bf82b8474f0872cbe19c85" }

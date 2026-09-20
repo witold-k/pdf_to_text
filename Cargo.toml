@@ -22,5 +22,5 @@ fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", 
 token_db = { version = "0.1.0", git = "https://github.com/witold-k/token_db", rev = "c607049f343410e7d0f7e4792af93274fbc90c0e" }
 
 # -- rest --------------------------------------------------------------------
-reqwest = { version = "0.13", features = ["json", "multipart", "blocking"] }
+ureq = { version = "3.4", default-features = false, features = ["multipart"] }
 

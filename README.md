@@ -12,6 +12,8 @@ pipeline artifact owned by this orchestrator and uses the existing serializer.
 
 - **GROBID / MinerU** extract usable document content from PDFs. Their
   backend-specific artifacts stay together in a per-document directory.
+  GROBID's native TEI response is retained there; `pdf2json` projects it into
+  structured JSON and the canonical text consumed by the token pipeline.
 - **fsscanner** discovers files, preserves directory layout, maps input paths to
   output paths, and controls parallel processing. `pdf_to_text` does not
   implement its own directory walker or worker pool.
@@ -95,11 +97,13 @@ Consequently the incremental rules are:
   together; the updated document `.tdb` then rebuilds `token_db.tdb`. The merged
   database is therefore the single freshness boundary for this final stage.
 
-For MinerU, a corpus containing `bitcoin.pdf` is intended to contain:
+For GROBID, a corpus containing `bitcoin.pdf` is intended to contain:
 
 ```text
 <output>/
 ├── bitcoin/
+│   ├── bitcoin.tei.xml
+│   ├── bitcoin.json
 │   └── bitcoin.md
 ├── bitcoin.md -> bitcoin/bitcoin.md
 ├── bitcoin.tok
@@ -108,9 +112,12 @@ For MinerU, a corpus containing `bitcoin.pdf` is intended to contain:
 └── token_db.tdb
 ```
 
-The outer extracted-text path remains the stable interface between extraction and
-tokenization. GROBID uses its canonical extracted text format instead of assuming
-that its native output is Markdown.
+The outer `bitcoin.md` path remains the stable interface between extraction and
+tokenization. For GROBID, Markdown is not a native backend artifact: GROBID's
+TEI XML is retained unchanged, `pdf2json` creates the simplified document model
+stored as JSON, and the same model supplies the canonical text written as `.md`.
+This keeps the rich extraction available without exposing backend-specific data
+to the token pipeline.
 
 ## Token artifacts and database
 

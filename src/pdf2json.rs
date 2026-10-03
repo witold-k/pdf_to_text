@@ -27,9 +27,30 @@ pub struct Paper {
 }
 
 impl Paper {
-    // If you want pretty JSON:
-    pub fn to_pretty_string(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap()
+    pub fn to_pretty_string(&self) -> Result<String> {
+        Ok(serde_json::to_string_pretty(self)?)
+    }
+
+    /// Plain-text projection used as the canonical input for tokenization.
+    pub fn to_text(&self) -> String {
+        let mut parts = Vec::new();
+
+        if !self.title.is_empty() {
+            parts.push(self.title.as_str());
+        }
+        if !self.abstract_.is_empty() {
+            parts.push(self.abstract_.as_str());
+        }
+        for section in &self.sections {
+            if !section.heading.is_empty() {
+                parts.push(section.heading.as_str());
+            }
+            if !section.text.is_empty() {
+                parts.push(section.text.as_str());
+            }
+        }
+
+        parts.join("\n\n")
     }
 }
 
@@ -67,9 +88,9 @@ impl GrobidConverter {
     }
 
     // ---------------------------------------------------------
-    // 2) TEI → JSON
+    // 2) TEI → simplified document model
     // ---------------------------------------------------------
-    pub fn tei_to_json(&self, xml: &str) -> Result<serde_json::Value> {
+    pub fn tei_to_paper(&self, xml: &str) -> Result<Paper> {
         let doc = Document::parse(xml)?;
         let root = doc.root_element();
 
@@ -87,7 +108,7 @@ impl GrobidConverter {
             references,
         };
 
-        serde_json::to_value(paper).map_err(|e| e.into())
+        Ok(paper)
     }
 
     // ---------------------------------------------------------

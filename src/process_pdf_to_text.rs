@@ -74,35 +74,18 @@ fn process_grobid(config: &Config, input: &Path, output: &Path) -> Result<()> {
     let converter = GrobidConverter::new(&config.grobid.url);
     let pdf_path = input.to_string_lossy();
     let tei = converter.extract_tei(&pdf_path)?;
-    let paper = converter.tei_to_json(&tei)?;
+    let paper = converter.tei_to_paper(&tei)?;
 
-    let mut parts = Vec::new();
-    if let Some(title) = paper.get("title").and_then(|value| value.as_str())
-        && !title.is_empty()
-    {
-        parts.push(title.to_owned());
-    }
-    if let Some(abstract_) = paper.get("abstract_").and_then(|value| value.as_str())
-        && !abstract_.is_empty()
-    {
-        parts.push(abstract_.to_owned());
-    }
-    if let Some(sections) = paper.get("sections").and_then(|value| value.as_array()) {
-        for section in sections {
-            if let Some(heading) = section.get("heading").and_then(|value| value.as_str())
-                && !heading.is_empty()
-            {
-                parts.push(heading.to_owned());
-            }
-            if let Some(text) = section.get("text").and_then(|value| value.as_str())
-                && !text.is_empty()
-            {
-                parts.push(text.to_owned());
-            }
-        }
-    }
+    let stem = output
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or(Error::InvalidPath("output path has no UTF-8 file stem"))?;
+    let tei_output = output_dir.join(format!("{stem}.tei.xml"));
+    let json_output = output_dir.join(format!("{stem}.json"));
 
-    fs::write(&primary, parts.join("\n\n"))?;
+    fs::write(tei_output, &tei)?;
+    fs::write(json_output, paper.to_pretty_string()?)?;
+    fs::write(&primary, paper.to_text())?;
     create_primary_link(output, &primary)?;
 
     Ok(())

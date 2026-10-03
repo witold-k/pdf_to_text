@@ -39,3 +39,9 @@ cover-lcov:
 cover-text:
 	cargo llvm-cov --all-features --workspace
 
+install:
+	cargo build --release
+	cargo clippy --release
+	cp {{target_dir}}/release/pdf_to_text ~/bin
+
+

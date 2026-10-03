@@ -3,7 +3,6 @@ use roxmltree::{Document, Node};
 use serde::Serialize;
 use std::fmt;
 
-const GROBID_URL: &str = "http://localhost:8070/api/processFulltextDocument";
 const TEI_NS: &str = "http://www.tei-c.org/ns/1.0";
 
 #[derive(Serialize)]
@@ -40,17 +39,13 @@ impl fmt::Display for Paper {
     }
 }
 
-pub struct GrobidConverter;
-
-impl GrobidConverter {
-    pub fn new() -> Self {
-        Self
-    }
+pub struct GrobidConverter {
+    url: String,
 }
 
-impl Default for GrobidConverter {
-    fn default() -> Self {
-        Self::new()
+impl GrobidConverter {
+    pub fn new(url: impl Into<String>) -> Self {
+        Self { url: url.into() }
     }
 }
 
@@ -67,7 +62,7 @@ impl GrobidConverter {
             .text("generateIDs", "true")
             .text("segmentSentences", "true");
 
-        let mut response = ureq::post(GROBID_URL)
+        let mut response = ureq::post(&self.url)
             .send(form)
             .context("GROBID request failed")?;
 
@@ -110,120 +105,82 @@ impl GrobidConverter {
                 && n.tag_name().namespace() == Some(TEI_NS)
                 && n.tag_name().name() == tag
             {
-                return Some(self.normalize(&n));
+                let text = n.text().unwrap_or("").trim();
+                if !text.is_empty() {
+                    return Some(text.to_string());
+                }
             }
         }
         None
     }
 
     fn find_all(&self, root: &Node, tag: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        for n in root.descendants() {
-            if n.is_element()
-                && n.tag_name().namespace() == Some(TEI_NS)
-                && n.tag_name().name() == tag
-            {
-                let t = self.normalize(&n);
-                if !t.is_empty() {
-                    out.push(t);
-                }
-            }
-        }
-        out
+        root.descendants()
+            .filter(|n| {
+                n.is_element()
+                    && n.tag_name().namespace() == Some(TEI_NS)
+                    && n.tag_name().name() == tag
+            })
+            .filter_map(|n| {
+                let text = n.text().unwrap_or("").trim();
+                (!text.is_empty()).then(|| text.to_string())
+            })
+            .collect()
     }
 
     fn collect_sections(&self, root: &Node) -> Vec<Section> {
-        let mut out = Vec::new();
+        let mut sections = Vec::new();
 
-        for div in root.descendants() {
-            if div.is_element()
-                && div.tag_name().namespace() == Some(TEI_NS)
-                && div.tag_name().name() == "div"
-            {
-                if !self.has_ancestor(&div, "body") {
-                    continue;
-                }
+        for div in root.descendants().filter(|n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(TEI_NS)
+                && n.tag_name().name() == "div"
+        }) {
+            let heading = div
+                .children()
+                .find(|n| {
+                    n.is_element()
+                        && n.tag_name().namespace() == Some(TEI_NS)
+                        && n.tag_name().name() == "head"
+                })
+                .and_then(|n| n.text())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
-                let heading = div
-                    .children()
-                    .find(|n| n.is_element() && n.tag_name().name() == "head")
-                    .map(|n| self.normalize(&n))
-                    .unwrap_or_default();
+            let text = div
+                .descendants()
+                .filter(|n| {
+                    n.is_element()
+                        && n.tag_name().namespace() == Some(TEI_NS)
+                        && n.tag_name().name() == "p"
+                })
+                .filter_map(|n| n.text())
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
 
-                let mut paras = Vec::new();
-                for p in div.children() {
-                    if p.is_element() && p.tag_name().name() == "p" {
-                        let t = self.normalize(&p);
-                        if !t.is_empty() {
-                            paras.push(t);
-                        }
-                    }
-                }
-
-                if !heading.is_empty() || !paras.is_empty() {
-                    out.push(Section {
-                        heading,
-                        text: paras.join("\n"),
-                    });
-                }
+            if !heading.is_empty() || !text.is_empty() {
+                sections.push(Section { heading, text });
             }
         }
 
-        out
+        sections
     }
 
     fn collect_references(&self, root: &Node) -> Vec<Reference> {
-        let mut out = Vec::new();
-
-        for bibl in root.descendants() {
-            if bibl.is_element()
-                && bibl.tag_name().namespace() == Some(TEI_NS)
-                && bibl.tag_name().name() == "biblStruct"
-            {
-                let id = bibl
-                    .attribute(("http://www.w3.org/XML/1998/namespace", "id"))
-                    .map(|s| s.to_string());
-
-                let text = self.normalize(&bibl);
-                if !text.is_empty() {
-                    out.push(Reference { id, text });
-                }
-            }
-        }
-
-        out
-    }
-
-    fn has_ancestor(&self, node: &Node, tag: &str) -> bool {
-        let mut cur = node.parent();
-        while let Some(n) = cur {
-            if n.is_element() && n.tag_name().name() == tag {
-                return true;
-            }
-            cur = n.parent();
-        }
-        false
-    }
-
-    fn normalize(&self, node: &Node) -> String {
-        let mut s = String::new();
-        for t in node.descendants().filter_map(|n| n.text()) {
-            s.push_str(t);
-            s.push(' ');
-        }
-
-        let mut out = s.split_whitespace().collect::<Vec<_>>().join(" ");
-
-        // remove GROBID boilerplate
-        if out.contains("GROBID - A machine learning software") {
-            out = out.replace(
-                "GROBID - A machine learning software for extracting information from scholarly documents",
-                "",
-            );
-            out = out.split_whitespace().collect::<Vec<_>>().join(" ");
-        }
-
-        out
+        root.descendants()
+            .filter(|n| {
+                n.is_element()
+                    && n.tag_name().namespace() == Some(TEI_NS)
+                    && n.tag_name().name() == "biblStruct"
+            })
+            .map(|n| Reference {
+                id: n.attribute(("http://www.w3.org/XML/1998/namespace", "id"))
+                    .map(str::to_string),
+                text: n.text().unwrap_or("").trim().to_string(),
+            })
+            .collect()
     }
 }
-

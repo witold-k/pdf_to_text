@@ -14,7 +14,7 @@ roxmltree = "0.21"
 simplelexer = { version = "0.1.0", git = "https://github.com/witold-k/simplelexer", rev = "9b04c15e393feac77c621dd72b35bc74607054a9" }
 
 # -- fsscan ------------------------------------------------------------------
-fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", rev = "e078679069008e1fc0d51a524e33c20d8590ac1a" }
+fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", rev = "57d24691489d5ccbb9b6587faca97ed8429055a5" }
 
 # -- database ----------------------------------------------------------------
 token_db = { version = "0.1.0", git = "https://github.com/witold-k/token_db", rev = "c607049f343410e7d0f7e4792af93274fbc90c0e" }

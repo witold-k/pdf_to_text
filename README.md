@@ -1,123 +1,178 @@
 # pdf_to_text
 
-Batch pipeline for converting PDF documents into structured text and token data.
+`pdf_to_text` is a small orchestration tool for preparing a local PDF corpus.
 
-The repository is intentionally small. It connects three existing building blocks:
+Its job is deliberately limited: connect existing components, map files between
+pipeline stages, and keep their outputs in a predictable layout. PDF extraction,
+filesystem scanning, lexing, token identity, and persistence belong to the
+specialized components that implement them.
 
-- [GROBID](https://github.com/kermitt2/grobid) for PDF -> TEI extraction,
-- `fsscanner` for parallel directory traversal and output mapping,
-- `token_db` for stable token IDs and token-frequency databases.
+## Components and responsibilities
 
-The current pipeline is aimed at corpus preparation rather than end-user document conversion.
+- **GROBID / MinerU** extract usable document content from PDFs. Their
+  backend-specific artifacts stay together in a per-document directory.
+- **fsscanner** discovers files, preserves directory layout, maps input paths to
+  output paths, and controls parallel processing. `pdf_to_text` does not
+  implement its own directory walker or worker pool.
+- **simplelexer** splits extracted UTF-8 text into lexical chunks. Whitespace
+  chunks are discarded; the remaining chunk text is passed to `token_db`.
+  `simplelexer` is intentionally a small lexer, not an NLP tokenizer. The
+  choice of lexer/tokenizer is a pipeline component rather than PDF extraction
+  logic.
+- **token_db** owns token identity, token-database persistence, and merging.
+  Tokenization produces one independent per-document `.tok` artifact. The
+  corpus-wide `token_db.tdb` is then built by merging the token information
+  from all document-local `.tok` artifacts.
+
+The repository should avoid reimplementing functionality that belongs in one of
+these components. In particular, matrix construction, TF-IDF/BM25 weighting,
+SVD/LSA, embeddings, and search belong downstream.
 
 ## Pipeline
 
 ```text
-PDF directory
+PDF corpus
     |
-    v
-GROBID
-    |
-    v
-TEI XML
-    |
-    v
-structured JSON
-    |
-    v
-simplelexer
-    |
-    +--> token ID stream (.tok)
-    |
-    +--> per-document token database (.tdb)
+    +--> GROBID or MinerU
+            |
+            +--> backend artifacts per PDF
+            |
+            +--> canonical extracted text
+                        |
+                        +--> simplelexer / token_db
+                                |
+                                +--> per-document .tok
 
-per-document .tdb files
+all per-document .tok files
     |
-    v
-join_token_db
-    |
-    v
-merged token database
+    +--> token_db merge
+            |
+            +--> token_db.tdb
 ```
 
-## Requirements
+The stages form a build-style dependency chain:
 
-- Rust toolchain compatible with edition 2024.
-- A running GROBID service at:
-  `http://localhost:8070/api/processFulltextDocument`
-- `jq` when using the coverage helpers from the `Justfile`.
+```text
+.pdf  ->  .md  ->  .tok  ->  token_db.tdb
+          cpp -> object      objects -> linked result
+```
+
+A `.tok` file is the **individual document token artifact**. It must be
+self-contained enough to be produced and kept independently of the merged
+corpus database. `token_db.tdb` is the **merged corpus token database** built
+from all current `.tok` files.
+
+Consequently the intended incremental rules are the same as for compiled
+artifacts:
+
+- rebuild a document's extracted output when its PDF is newer;
+- rebuild only that document's `.tok` when its extracted text is newer;
+- rebuild `token_db.tdb` when it is missing or any `.tok` is newer.
+
+When rebuilding `token_db.tdb`, all current `.tok` files participate in the
+merge, just as a linker consumes all required object files even when only one
+object caused relinking.
+
+The important distinction is that `.tok` and `.tdb` are **not MinerU
+outputs**. MinerU owns only the files inside its per-document artifact
+directory. The token artifact is produced by the tokenization stage, and the
+single `token_db.tdb` represents the merged token state for the whole corpus.
+
+## Output layout
+
+For MinerU, a corpus containing `bitcoin.pdf` is intended to look like:
+
+```text
+<output>/
+├── bitcoin/
+│   └── bitcoin.md          # MinerU artifact (plus any other MinerU artifacts)
+├── bitcoin.md -> bitcoin/bitcoin.md
+├── bitcoin.tok             # independent token artifact for this document
+└── token_db.tdb            # one shared token database for the corpus
+```
+
+`<output_dir>` is used directly; `pdf_to_text` does not append an extra `text/` directory.\n\nThe outer `.md` path is the stable interface between extraction and
+tokenization. The symlink is relative so the output tree can be moved as a
+unit. GROBID follows the same separation of backend artifacts from downstream
+token data, although its native primary format is not Markdown and its final
+canonical-output handling is still being refined.
+
+## Token artifacts and database
+
+There is exactly one `.tok` artifact per processed document and exactly one
+merged `token_db.tdb` per corpus.
+
+A `.tok` file is a persisted document-local `TokenDb`: it contains the
+unique tokens and occurrence counts for exactly one document. It therefore
+does not depend on IDs from an already merged `token_db.tdb`.
+
+The corpus `token_db.tdb` uses the same `TokenDb` persistence format, but
+represents a different level of the pipeline: it is rebuilt by loading all
+current `.tok` files and merging them with `TokenDb::merge`.
+
+`token_db` is the authority for the document token representation, assigning
+final IDs, counting tokens, merging document token data, and reading/writing
+the binary database format. `pdf_to_text` should only orchestrate these
+stages and their timestamp dependencies.
+
+## Backend concurrency
+
+PDF extraction concurrency is configured independently for each backend in
+`~/.config/pdf_to_text/config.json`:
+
+```json
+{
+  "grobid": {
+    "threads": 1
+  },
+  "mineru": {
+    "threads": 1
+  }
+}
+```
+
+Both default to one worker. This is particularly important for MinerU because
+multiple simultaneous local VLM/vLLM instances can consume substantial GPU
+memory. The worker limit is passed to `fsscanner`; scheduling itself remains a
+`fsscanner` responsibility.
+
+## Running
+
+Use the configured default backend:
+
+```sh
+pdf_to_text <pdf_input_dir> <output_dir>
+```
+
+or select one explicitly:
+
+```sh
+pdf_to_text mineru <pdf_input_dir> <output_dir>
+pdf_to_text grobid <pdf_input_dir> <output_dir>
+```
+
+Backend services can be started with:
+
+```sh
+pdf_to_text start mineru
+pdf_to_text start grobid
+```
 
 ## Build and test
 
-```bash
+```sh
 just build
 ```
 
-This runs:
+The project uses the repository convention that tests live under `tests/`,
+mirror the relevant `src/` hierarchy, and use the `_test.rs` suffix.
 
-```bash
-cargo build
-cargo test
-cargo clippy
-```
+## Design direction
 
-## PDF pipeline
+`pdf_to_text` is an orchestrator, not a framework.
 
-```bash
-cargo run --bin pdf_to_text -- <pdf_input_dir> <output_dir>
-```
-
-For every PDF, stage 1 writes structured GROBID-derived JSON below:
-
-```text
-<output_dir>/text/
-```
-
-while preserving the input directory layout.
-
-Stage 2 reads those JSON files and creates:
-
-- `.tok`: a Postcard-encoded `Vec<u32>` of token IDs,
-- `.tdb`: the per-document `token_db::TokenDb` used to assign those IDs.
-
-The token IDs in a `.tok` file are local to the matching `.tdb` file.
-
-## Joining token databases
-
-```bash
-cargo run --bin join_token_db -- <db_input_dir> <output_db_file> <input_extension>
-```
-
-Example:
-
-```bash
-cargo run --bin join_token_db -- corpus/text corpus/token_db.tdb tdb
-```
-
-The command scans all files with the requested extension, merges their token counts into one `TokenDb`, and saves the result to `<output_db_file>`.
-
-Note that merging token databases can change token IDs. The current command only creates the merged database; it does not rewrite existing `.tok` streams to the merged ID space.
-
-## Structured PDF output
-
-The JSON extracted from GROBID currently contains:
-
-- title,
-- authors,
-- abstract,
-- body sections with headings and text,
-- bibliography entries.
-
-Despite the repository name, this stage intentionally keeps document structure instead of flattening everything into plain text.
-
-## Design notes
-
-- Directory-processing errors are propagated instead of silently ignored.
-- Token serialization and filesystem errors are returned to the caller.
-- `token_db` owns token identity and persistence; this repository only prepares data for it.
-- Matrix construction, weighting, SVD, embeddings, and other downstream analysis do not belong here.
-- Consistent test layout: tests live under `tests/`, mirror the relative `src/` hierarchy where relevant, and use the source filename with a `_test.rs` suffix.
-
-## Status
-
-This is a corpus-preparation utility under active development. The data formats and CLI may still change as the downstream text/SVD experiments take shape.
+A useful rule for future changes is: if functionality can naturally live in
+GROBID, MinerU, `fsscanner`, `simplelexer`, `token_db`, or a downstream
+search/matrix crate, it should live there rather than grow a second
+implementation here. This repository should mainly express the pipeline and
+the contracts between its stages.

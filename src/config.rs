@@ -11,6 +11,7 @@ pub struct GrobidConfig {
     pub server_binary: PathBuf,
     pub server_workdir: PathBuf,
     pub server_args: Vec<String>,
+    pub threads: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +21,7 @@ pub struct MineruConfig {
     pub server_binary: PathBuf,
     pub server_workdir: PathBuf,
     pub server_args: Vec<String>,
+    pub threads: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +46,7 @@ impl Default for Config {
                 server_binary: services_dir.join("grobid/gradlew"),
                 server_workdir: services_dir.join("grobid"),
                 server_args: vec![":grobid-service:run".into()],
+                threads: 1,
             },
             mineru: MineruConfig {
                 source: "https://github.com/opendatalab/MinerU".into(),
@@ -59,6 +62,7 @@ impl Default for Config {
                     "--tier".into(),
                     "standard".into(),
                 ],
+                threads: 1,
             },
         }
     }

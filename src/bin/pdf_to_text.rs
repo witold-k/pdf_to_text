@@ -3,8 +3,10 @@ use anyhow::Result;
 use fsscanner::fsscanner_mt;
 use pdf_to_text::config::Config;
 use pdf_to_text::process_pdf_to_text::{process_pdf_to_text, PdfBackend};
-use pdf_to_text::process_text_to_token::process_text_to_token;
+use pdf_to_text::process_text_to_token::{process_join_token, process_text_to_token};
 use pdf_to_text::service::start_service;
+use std::path::PathBuf;
+use token_db::TokenDb;
 
 fn usage() {
     eprintln!("Usage:");
@@ -50,14 +52,18 @@ fn main() -> Result<()> {
     // Stage 1: PDF -> text
     //
 
-    let text_output = format!("{}/text", output_root);
+    let workers = match backend {
+        PdfBackend::Grobid => config.grobid.threads,
+        PdfBackend::Mineru => config.mineru.threads,
+    };
 
     let worker_config = config.clone();
-    fsscanner_mt::process_dir_map(
+    fsscanner_mt::process_dir_map_outdated_with_workers(
         pdf_input,
-        &text_output,
+        output_root,
         "pdf",
         "md",
+        workers,
         move |input, output| {
             process_pdf_to_text(&worker_config, backend, input, output).map_err(Into::into)
         },
@@ -65,19 +71,47 @@ fn main() -> Result<()> {
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
     //
-    // Stage 2: text -> token_db
+    // Stage 2: text -> per-document token artifact
     //
 
-    fsscanner_mt::process_dir_map_multi(
-        &text_output,
-        &text_output,
-        "md",
-        &["tok", "tdb"],
-        |input, outputs| {
-            process_text_to_token(input, &outputs[0], &outputs[1]).map_err(Into::into)
+    fsscanner_mt::process_dir_map_with_workers(
+        pdf_input,
+        output_root,
+        "pdf",
+        "tok",
+        1,
+        move |_pdf, token_output| {
+            let text_input = token_output.with_extension("md");
+            if fsscanner_mt::needs_update(&text_input, token_output)? {
+                process_text_to_token(&text_input, token_output).map_err(|error| error.to_string())?;
+            }
+            Ok(())
         },
     )
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+
+    //
+    // Stage 3: per-document token artifacts -> merged corpus database
+    //
+
+    let token_db_output = PathBuf::from(output_root).join("token_db.tdb");
+    if fsscanner_mt::dir_needs_update(output_root, "tok", &token_db_output)
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+    {
+        println!("token merge -> {}", token_db_output.display());
+
+        let token_db = fsscanner_mt::process_dir_state_and_map(
+            TokenDb::new(),
+            output_root,
+            output_root,
+            "tok",
+            "unused",
+            |db, input, _| process_join_token(db, input).map_err(Into::into),
+        )
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+
+        token_db.save(&token_db_output)?;
+    }
 
     Ok(())
 }

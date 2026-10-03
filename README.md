@@ -4,8 +4,9 @@
 
 Its job is deliberately limited: connect existing components, map files between
 pipeline stages, and keep their outputs in a predictable layout. PDF extraction,
-filesystem scanning, lexing, token identity, and persistence belong to the
-specialized components that implement them.
+filesystem scanning, lexing, and token-database behavior belong to the
+specialized components that implement them. The small `.tok` stream is a
+pipeline artifact owned by this orchestrator and uses the existing serializer.
 
 ## Components and responsibilities
 
@@ -20,9 +21,10 @@ specialized components that implement them.
   choice of lexer/tokenizer is a pipeline component rather than PDF extraction
   logic.
 - **token_db** owns token identity, token-database persistence, and merging.
-  Tokenization produces one independent per-document `.tok` artifact. The
-  corpus-wide `token_db.tdb` is then built by merging the token information
-  from all document-local `.tok` artifacts.
+  Tokenization uses `token_db` to build a document-local `.tdb` lookup database
+  and records the returned local IDs, in document order, as the per-document
+  `.tok` stream. The corpus-wide `token_db.tdb` is built by merging all
+  document-local `.tdb` databases.
 
 The repository should avoid reimplementing functionality that belongs in one of
 these components. In particular, matrix construction, TF-IDF/BM25 weighting,
@@ -41,79 +43,111 @@ PDF corpus
                         |
                         +--> simplelexer / token_db
                                 |
-                                +--> per-document .tok
+                                +--> per-document .tok  (ordered token IDs)
+                                +--> per-document .tdb  (local ID lookup + counts)
 
-all per-document .tok files
+all per-document .tdb files
     |
     +--> token_db merge
             |
             +--> token_db.tdb
+                    |
+                    +--> each document .tok + .tdb
+                            |
+                            +--> per-document *_glob.tok (corpus-global IDs)
 ```
 
 The stages form a build-style dependency chain:
 
 ```text
-.pdf  ->  .md  ->  .tok  ->  token_db.tdb
-          cpp -> object      objects -> linked result
+.pdf  ->  .md  ->  (.tok + .tdb)
+                       |
+all document .tdb -----+--> token_db.tdb
+                              |
+(document.tok + document.tdb)-+--> document_glob.tok
 ```
 
-A `.tok` file is the **individual document token artifact**. It must be
-self-contained enough to be produced and kept independently of the merged
-corpus database. `token_db.tdb` is the **merged corpus token database** built
-from all current `.tok` files.
+A `.tok` file is the ordered stream of document-local token IDs. It preserves
+token order and repetition and is interpreted together with the matching document
+`.tdb`.
 
-Consequently the intended incremental rules are the same as for compiled
-artifacts:
+A document `.tdb` is the lookup database for that stream. It maps local token IDs
+to token text and stores occurrence counts. It can be produced independently for
+each document.
 
-- rebuild a document's extracted output when its PDF is newer;
-- rebuild only that document's `.tok` when its extracted text is newer;
-- rebuild `token_db.tdb` when it is missing or any `.tok` is newer.
+The corpus `token_db.tdb` is rebuilt by loading and merging all document-local
+`.tdb` files with `TokenDb::merge`. The `.tok` streams are not merged.
 
-When rebuilding `token_db.tdb`, all current `.tok` files participate in the
-merge, just as a linker consumes all required object files even when only one
-object caused relinking.
+After the corpus database exists, a final pipeline stage translates every
+`document.tok` from document-local IDs to the IDs of `token_db.tdb`. For each
+local ID, the matching `document.tdb` supplies the token text and `token_db.tdb`
+supplies that token's corpus-global ID. The translated stream is written next
+to the original as `document_glob.tok`. The local `.tok` is retained unchanged.
 
-The important distinction is that `.tok` and `.tdb` are **not MinerU
-outputs**. MinerU owns only the files inside its per-document artifact
-directory. The token artifact is produced by the tokenization stage, and the
-single `token_db.tdb` represents the merged token state for the whole corpus.
+Consequently the incremental rules are:
 
-## Output layout
+- rebuild extracted text when its PDF is newer;
+- rebuild both a document's `.tok` and `.tdb` when its extracted text is newer,
+  or when either artifact is missing;
+- rebuild `token_db.tdb` when it is missing or any document-local `.tdb` is newer;
+- rebuild `document_glob.tok` only when `token_db.tdb` is newer (or the global
+  stream is missing). In the normal pipeline, `.tok` and `.tdb` are regenerated
+  together; the updated document `.tdb` then rebuilds `token_db.tdb`. The merged
+  database is therefore the single freshness boundary for this final stage.
 
-For MinerU, a corpus containing `bitcoin.pdf` is intended to look like:
+For MinerU, a corpus containing `bitcoin.pdf` is intended to contain:
 
 ```text
 <output>/
 ├── bitcoin/
-│   └── bitcoin.md          # MinerU artifact (plus any other MinerU artifacts)
+│   └── bitcoin.md
 ├── bitcoin.md -> bitcoin/bitcoin.md
-├── bitcoin.tok             # independent token artifact for this document
-└── token_db.tdb            # one shared token database for the corpus
+├── bitcoin.tok
+├── bitcoin.tdb
+├── bitcoin_glob.tok
+└── token_db.tdb
 ```
 
-`<output_dir>` is used directly; `pdf_to_text` does not append an extra `text/` directory.\n\nThe outer `.md` path is the stable interface between extraction and
-tokenization. The symlink is relative so the output tree can be moved as a
-unit. GROBID follows the same separation of backend artifacts from downstream
-token data, although its native primary format is not Markdown and its final
-canonical-output handling is still being refined.
+The outer extracted-text path remains the stable interface between extraction and
+tokenization. GROBID uses its canonical extracted text format instead of assuming
+that its native output is Markdown.
 
 ## Token artifacts and database
 
-There is exactly one `.tok` artifact per processed document and exactly one
-merged `token_db.tdb` per corpus.
+`token_db` has one responsibility here: token identity, counts, merging, and
+persistence of `TokenDb` data (`.tdb`). It does not know about `.tok` files.
 
-A `.tok` file is a persisted document-local `TokenDb`: it contains the
-unique tokens and occurrence counts for exactly one document. It therefore
-does not depend on IDs from an already merged `token_db.tdb`.
+The ordered `.tok` stream is a `pdf_to_text` pipeline artifact. It is only the
+serialized sequence of document-local token IDs returned while filling the
+matching `TokenDb`; its persistence deliberately stays small and uses the
+already present `postcard` serializer rather than introducing another storage
+format or pushing a second responsibility into `token_db`.
 
-The corpus `token_db.tdb` uses the same `TokenDb` persistence format, but
-represents a different level of the pipeline: it is rebuilt by loading all
-current `.tok` files and merging them with `TokenDb::merge`.
+This ownership is intentional even though `pdf_to_text` should otherwise contain
+as little functionality as possible: the stream describes document order in this
+pipeline, not token-database state. Moving `.tok` persistence into `token_db`
+would give that crate a second data model and responsibility merely because the
+stream happens to contain `TokenId` values.
 
-`token_db` is the authority for the document token representation, assigning
-final IDs, counting tokens, merging document token data, and reading/writing
-the binary database format. `pdf_to_text` should only orchestrate these
-stages and their timestamp dependencies.
+For each processed document the two outputs therefore form a pair with separate
+responsibilities:
+
+- `document.tok`: owned by `pdf_to_text`; ordered, repeated document-local IDs;
+- `document.tdb`: owned by `token_db`; local ID-to-token lookup and counts.
+
+The IDs in `document.tok` are interpreted against that document's
+`document.tdb`. They are not corpus-global IDs. The corpus database
+`token_db.tdb` is produced only from the document-local `.tdb` files; `.tok`
+files are neither inputs to `TokenDb::merge` nor rewritten when databases are
+merged.
+
+Once the merge is complete, `pdf_to_text` derives `document_glob.tok` from the
+triple `document.tok + document.tdb + token_db.tdb`. The `_glob.tok` stream has
+the same length, order, and repetitions as the local `.tok`; only its numeric
+IDs are replaced by their corpus-global IDs. These generated files live on the
+same directory level as their corresponding `.tok` files and can therefore be
+consumed downstream without the document-local lookup database when only the
+corpus-global token space is needed.
 
 ## Backend concurrency
 
@@ -164,8 +198,12 @@ pdf_to_text start grobid
 just build
 ```
 
-The project uses the repository convention that tests live under `tests/`,
-mirror the relevant `src/` hierarchy, and use the `_test.rs` suffix.
+The `build` recipe runs `cargo build`, `cargo test`, and `cargo clippy`, so it is
+the normal pre-merge check for this repository.
+
+Tests live under `tests/`, mirror the relevant `src/` hierarchy, and use the
+`_test.rs` suffix. For example, tests for `src/process_text_to_token.rs` belong
+in `tests/process_text_to_token_test.rs`.
 
 ## Design direction
 

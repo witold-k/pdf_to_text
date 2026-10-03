@@ -9,9 +9,12 @@ pub enum Error {
     Xml(roxmltree::Error),
     Lex(simplelexer::error::LexError),
     TokenDb(token_db::Error),
+    Postcard(postcard::Error),
     Http(ureq::Error),
     InvalidBackend,
     InvalidPath(&'static str),
+    InvalidTokenId(u32),
+    MissingGlobalToken(String),
     NoPrimaryArtifact,
     MultiplePrimaryArtifacts,
     MineruFailed(ExitStatus),
@@ -30,9 +33,12 @@ impl fmt::Display for Error {
             Self::Xml(error) => write!(f, "XML error: {error}"),
             Self::Lex(error) => write!(f, "lexer error: {error}"),
             Self::TokenDb(error) => write!(f, "token database error: {error}"),
+            Self::Postcard(error) => write!(f, "token stream serialization error: {error}"),
             Self::Http(error) => write!(f, "HTTP error: {error}"),
             Self::InvalidBackend => write!(f, "unknown PDF backend; expected 'grobid' or 'mineru'"),
             Self::InvalidPath(message) => write!(f, "invalid path: {message}"),
+            Self::InvalidTokenId(id) => write!(f, "token stream contains unknown local token ID {id}"),
+            Self::MissingGlobalToken(token) => write!(f, "merged token database is missing token {token:?}"),
             Self::NoPrimaryArtifact => write!(f, "backend produced no primary artifact"),
             Self::MultiplePrimaryArtifacts => write!(f, "backend produced multiple primary artifacts"),
             Self::MineruFailed(status) => write!(f, "MinerU failed with status {status}"),
@@ -59,6 +65,9 @@ impl From<simplelexer::error::LexError> for Error {
 }
 impl From<token_db::Error> for Error {
     fn from(error: token_db::Error) -> Self { Self::TokenDb(error) }
+}
+impl From<postcard::Error> for Error {
+    fn from(error: postcard::Error) -> Self { Self::Postcard(error) }
 }
 impl From<ureq::Error> for Error {
     fn from(error: ureq::Error) -> Self { Self::Http(error) }

@@ -2,6 +2,7 @@ use pdf_to_text::error::{Error, Result};
 
 use fsscanner::fsscanner_mt;
 use pdf_to_text::process_text_to_token::process_join_token;
+use std::path::PathBuf;
 use token_db::TokenDb;
 
 fn main() -> Result<()> {
@@ -15,6 +16,7 @@ fn main() -> Result<()> {
     let db_input_dir = &args[1];
     let output_db_file = &args[2];
     let input_extension = &args[3];
+    let output_path = PathBuf::from(output_db_file);
 
     let db = fsscanner_mt::process_dir_state_and_map(
         TokenDb::default(),
@@ -22,7 +24,16 @@ fn main() -> Result<()> {
         db_input_dir,
         input_extension,
         "unused",
-        |db, input, _| process_join_token(db, input).map_err(|_| fsscanner::Error::Callback("token merge failed")),
+        {
+            let output_path = output_path.clone();
+            move |db, input, _| {
+                if input == output_path {
+                    return Ok(());
+                }
+                process_join_token(db, input)
+                    .map_err(|_| fsscanner::Error::Callback("token merge failed"))
+            }
+        },
     ).map_err(|_| Error::FsScanner)?;
 
     db.save(output_db_file)?;

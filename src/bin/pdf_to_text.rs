@@ -3,7 +3,9 @@ use pdf_to_text::error::{Error, Result};
 use fsscanner::fsscanner_mt;
 use pdf_to_text::config::Config;
 use pdf_to_text::process_pdf_to_text::{process_pdf_to_text, PdfBackend};
-use pdf_to_text::process_text_to_token::{process_join_token, process_text_to_token};
+use pdf_to_text::process_text_to_token::{
+    process_join_token, process_text_to_token, process_token_to_global,
+};
 use pdf_to_text::service::start_service;
 use std::path::PathBuf;
 use token_db::TokenDb;
@@ -71,7 +73,7 @@ fn main() -> Result<()> {
     .map_err(|_| Error::FsScanner)?;
 
     //
-    // Stage 2: text -> per-document token artifact
+    // Stage 2: text -> per-document token stream + lookup database
     //
 
     fsscanner_mt::process_dir_map_with_workers(
@@ -82,8 +84,12 @@ fn main() -> Result<()> {
         1,
         move |_pdf, token_output| {
             let text_input = token_output.with_extension("md");
-            if fsscanner_mt::needs_update(&text_input, token_output)? {
-                process_text_to_token(&text_input, token_output).map_err(|_| fsscanner::Error::Callback("token conversion failed"))?;
+            let db_output = token_output.with_extension("tdb");
+            if fsscanner_mt::needs_update(&text_input, token_output)?
+                || fsscanner_mt::needs_update(&text_input, &db_output)?
+            {
+                process_text_to_token(&text_input, token_output, &db_output)
+                    .map_err(|_| fsscanner::Error::Callback("token conversion failed"))?;
             }
             Ok(())
         },
@@ -91,11 +97,11 @@ fn main() -> Result<()> {
     .map_err(|_| Error::FsScanner)?;
 
     //
-    // Stage 3: per-document token artifacts -> merged corpus database
+    // Stage 3: per-document lookup databases -> merged corpus database
     //
 
     let token_db_output = PathBuf::from(output_root).join("token_db.tdb");
-    if fsscanner_mt::dir_needs_update(output_root, "tok", &token_db_output)
+    if fsscanner_mt::dir_needs_update(output_root, "tdb", &token_db_output)
         .map_err(|_| Error::FsScanner)?
     {
         println!("token merge -> {}", token_db_output.display());
@@ -104,14 +110,63 @@ fn main() -> Result<()> {
             TokenDb::new(),
             output_root,
             output_root,
-            "tok",
+            "tdb",
             "unused",
-            |db, input, _| process_join_token(db, input).map_err(|_| fsscanner::Error::Callback("token merge failed")),
+            {
+                let token_db_output = token_db_output.clone();
+                move |db, input, _| {
+                    if input == token_db_output {
+                        return Ok(());
+                    }
+                    process_join_token(db, input)
+                        .map_err(|_| fsscanner::Error::Callback("token merge failed"))
+                }
+            },
         )
         .map_err(|_| Error::FsScanner)?;
 
         token_db.save(&token_db_output)?;
     }
+
+    //
+    // Stage 4: document-local token IDs -> corpus-global token IDs
+    //
+
+    let global_db = TokenDb::load(&token_db_output)?;
+    fsscanner_mt::process_dir_map_with_workers(
+        output_root,
+        output_root,
+        "tdb",
+        "unused",
+        1,
+        {
+            let token_db_output = token_db_output.clone();
+            move |local_db_input, _| {
+                if local_db_input == token_db_output {
+                    return Ok(());
+                }
+
+                let token_input = local_db_input.with_extension("tok");
+                let stem = local_db_input
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .ok_or(fsscanner::Error::Callback("invalid token database path"))?;
+                let global_token_output = local_db_input.with_file_name(format!("{stem}_glob.tok"));
+
+                if fsscanner_mt::needs_update(&token_db_output, &global_token_output)? {
+                    process_token_to_global(
+                        &token_input,
+                        local_db_input,
+                        &global_db,
+                        &global_token_output,
+                    )
+                    .map_err(|_| fsscanner::Error::Callback("global token remap failed"))?;
+                }
+                Ok(())
+            }
+        },
+    )
+    .map_err(|_| Error::FsScanner)?;
 
     Ok(())
 }

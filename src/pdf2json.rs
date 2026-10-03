@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::Result;
 use roxmltree::{Document, Node};
 use serde::Serialize;
 use std::fmt;
@@ -55,28 +55,22 @@ impl GrobidConverter {
 impl GrobidConverter {
     pub fn extract_tei(&self, pdf_path: &str) -> Result<String> {
         let form = ureq::unversioned::multipart::Form::new()
-            .file("input", pdf_path)
-            .with_context(|| format!("Cannot open {pdf_path}"))?
+            .file("input", pdf_path)?
             .text("consolidateHeader", "1")
             .text("teiCoordinates", "true")
             .text("generateIDs", "true")
             .text("segmentSentences", "true");
 
-        let mut response = ureq::post(&self.url)
-            .send(form)
-            .context("GROBID request failed")?;
+        let mut response = ureq::post(&self.url).send(form)?;
 
-        response
-            .body_mut()
-            .read_to_string()
-            .context("failed to read GROBID response")
+        Ok(response.body_mut().read_to_string()?)
     }
 
     // ---------------------------------------------------------
     // 2) TEI → JSON
     // ---------------------------------------------------------
     pub fn tei_to_json(&self, xml: &str) -> Result<serde_json::Value> {
-        let doc = Document::parse(xml).context("Failed to parse TEI XML")?;
+        let doc = Document::parse(xml)?;
         let root = doc.root_element();
 
         let title = self.find_first_text(&root, "title").unwrap_or_default();

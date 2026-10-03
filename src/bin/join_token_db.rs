@@ -1,4 +1,4 @@
-use anyhow::Result;
+use pdf_to_text::error::{Error, Result};
 
 use fsscanner::fsscanner_mt;
 use pdf_to_text::process_text_to_token::process_join_token;
@@ -22,8 +22,8 @@ fn main() -> Result<()> {
         db_input_dir,
         input_extension,
         "unused",
-        |db, input, _| process_join_token(db, input).map_err(Into::into),
-    ).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        |db, input, _| process_join_token(db, input).map_err(|_| fsscanner::Error::Callback("token merge failed")),
+    ).map_err(|_| Error::FsScanner)?;
 
     db.save(output_db_file)?;
     Ok(())

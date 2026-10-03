@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::Result;
 use simplelexer::chunkkind::ChunkKind;
 use simplelexer::quotelexer::QuoteLexer;
 use std::fs;
@@ -27,12 +27,10 @@ pub fn process_text_to_token(
 ) -> Result<()> {
     println!("text -> token: {} -> {}", input.display(), token_output.display());
 
-    let data = fs::read_to_string(input)
-        .with_context(|| format!("failed to read {}", input.display()))?;
+    let data = fs::read_to_string(input)?;
     let mut db = TokenDb::new();
     let _tokenized = tokenize(&mut db, &data)?;
-    db.save(token_output)
-        .with_context(|| format!("failed to write {}", token_output.display()))?;
+    db.save(token_output)?;
 
     Ok(())
 }

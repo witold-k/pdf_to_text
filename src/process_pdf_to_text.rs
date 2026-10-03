@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use crate::error::{Error, Result};
 use crate::config::Config;
 use crate::pdf2json::GrobidConverter;
 use serde::{Deserialize, Serialize};
@@ -26,13 +26,15 @@ impl fmt::Display for PdfBackend {
 }
 
 impl FromStr for PdfBackend {
-    type Err = anyhow::Error;
+    type Err = Error;
 
     fn from_str(value: &str) -> Result<Self> {
-        match value.to_ascii_lowercase().as_str() {
-            "grobid" => Ok(Self::Grobid),
-            "mineru" => Ok(Self::Mineru),
-            _ => bail!("unknown PDF backend '{value}'; expected 'grobid' or 'mineru'"),
+        if value.eq_ignore_ascii_case("grobid") {
+            Ok(Self::Grobid)
+        } else if value.eq_ignore_ascii_case("mineru") {
+            Ok(Self::Mineru)
+        } else {
+            Err(Error::InvalidBackend)
         }
     }
 }
@@ -56,12 +58,11 @@ pub fn process_pdf_to_text(
 
 fn process_grobid(config: &Config, input: &Path, output: &Path) -> Result<()> {
     let output_dir = output_directory(output)?;
-    fs::create_dir_all(&output_dir)
-        .with_context(|| format!("failed to create {}", output_dir.display()))?;
+    fs::create_dir_all(&output_dir)?;
     let primary = output_dir.join(
         output
             .file_name()
-            .context("output path has no file name")?,
+            .ok_or(Error::InvalidPath("output path has no file name"))?,
     );
 
     println!(
@@ -101,24 +102,21 @@ fn process_grobid(config: &Config, input: &Path, output: &Path) -> Result<()> {
         }
     }
 
-    fs::write(&primary, parts.join("\n\n"))
-        .with_context(|| format!("failed to write {}", primary.display()))?;
+    fs::write(&primary, parts.join("\n\n"))?;
     create_primary_link(output, &primary)?;
 
     Ok(())
 }
 
 fn output_directory(output: &Path) -> Result<PathBuf> {
-    let parent = output.parent().context("output path has no parent")?;
-    let stem = output.file_stem().context("output path has no file stem")?;
+    let parent = output.parent().ok_or(Error::InvalidPath("output path has no parent"))?;
+    let stem = output.file_stem().ok_or(Error::InvalidPath("output path has no file stem"))?;
     Ok(parent.join(stem))
 }
 
 fn find_primary_artifact(output_dir: &Path, extension: &str) -> Result<PathBuf> {
     let mut matches = Vec::new();
-    for entry in fs::read_dir(output_dir)
-        .with_context(|| format!("failed to read {}", output_dir.display()))?
-    {
+    for entry in fs::read_dir(output_dir)? {
         let path = entry?.path();
         if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some(extension) {
             matches.push(path);
@@ -127,14 +125,8 @@ fn find_primary_artifact(output_dir: &Path, extension: &str) -> Result<PathBuf> 
 
     match matches.as_slice() {
         [primary] => Ok(primary.clone()),
-        [] => bail!(
-            "backend produced no .{extension} primary artifact in {}",
-            output_dir.display()
-        ),
-        _ => bail!(
-            "backend produced multiple .{extension} files in {}; primary artifact is ambiguous",
-            output_dir.display()
-        ),
+        [] => Err(Error::NoPrimaryArtifact),
+        _ => Err(Error::MultiplePrimaryArtifacts),
     }
 }
 
@@ -143,33 +135,25 @@ fn create_primary_link(link: &Path, target: &Path) -> Result<()> {
     use std::os::unix::fs::symlink;
 
     if link.exists() || link.symlink_metadata().is_ok() {
-        fs::remove_file(link)
-            .with_context(|| format!("failed to remove old link {}", link.display()))?;
+        fs::remove_file(link)?;
     }
 
-    let parent = link.parent().context("link path has no parent")?;
+    let parent = link.parent().ok_or(Error::InvalidPath("link path has no parent"))?;
     let relative_target = target
         .strip_prefix(parent)
-        .with_context(|| format!("{} is not below {}", target.display(), parent.display()))?;
+        .map_err(|_| Error::InvalidPath("link target is outside link parent"))?;
 
-    symlink(relative_target, link).with_context(|| {
-        format!(
-            "failed to create link {} -> {}",
-            link.display(),
-            relative_target.display()
-        )
-    })
+    Ok(symlink(relative_target, link)?)
 }
 
 #[cfg(not(unix))]
 fn create_primary_link(_link: &Path, _target: &Path) -> Result<()> {
-    bail!("canonical output links are currently supported only on Unix systems")
+    Err(Error::UnsupportedPlatform)
 }
 
 fn process_mineru(config: &Config, input: &Path, output: &Path) -> Result<()> {
     let output_dir = output_directory(output)?;
-    fs::create_dir_all(&output_dir)
-        .with_context(|| format!("failed to create {}", output_dir.display()))?;
+    fs::create_dir_all(&output_dir)?;
 
     println!(
         "PDF -> text [mineru]: {} -> {}",
@@ -184,16 +168,10 @@ fn process_mineru(config: &Config, input: &Path, output: &Path) -> Result<()> {
         .arg(&output_dir)
         .arg("--tier")
         .arg("standard")
-        .status()
-        .with_context(|| {
-            format!(
-                "failed to start MinerU binary {}",
-                config.mineru.binary.display()
-            )
-        })?;
+        .status()?;
 
     if !status.success() {
-        bail!("MinerU failed for {} with status {status}", input.display());
+        return Err(Error::MineruFailed(status));
     }
 
     let primary = find_primary_artifact(&output_dir, "md")?;

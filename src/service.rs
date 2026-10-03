@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::Result;
 use std::process::{Child, Command};
 
 use crate::{config::Config, process_pdf_to_text::PdfBackend};
@@ -29,9 +29,8 @@ pub fn start_service(config: &Config, backend: PdfBackend) -> Result<Child> {
         args.join(" ")
     );
 
-    Command::new(binary)
+    Ok(Command::new(binary)
         .current_dir(workdir)
         .args(args)
-        .spawn()
-        .with_context(|| format!("failed to start {} service {}", backend, binary.display()))
+        .spawn()?)
 }

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 
@@ -70,24 +70,18 @@ impl Default for Config {
 
 impl Config {
     pub fn load(path: &std::path::Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("failed to read config {}", path.display()))?;
-        serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse config {}", path.display()))
+        let content = fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&content)?)
     }
 
     pub fn save(&self, path: &std::path::Path) -> Result<()> {
-        let content =
-            serde_json::to_string_pretty(self).context("failed to serialize config")?;
+        let content = serde_json::to_string_pretty(self)?;
 
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create config directory {}", parent.display())
-            })?;
+            fs::create_dir_all(parent)?;
         }
 
-        fs::write(path, content)
-            .with_context(|| format!("failed to write config {}", path.display()))
+        Ok(fs::write(path, content)?)
     }
 
     /// Returns `true` if the configuration file was created.

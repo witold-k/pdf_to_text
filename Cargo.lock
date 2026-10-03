@@ -3,12 +3,6 @@
 version = 4
 
 [[package]]
-name = "anyhow"
-version = "1.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
-
-[[package]]
 name = "atomic-polyfill"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -108,7 +102,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 [[package]]
 name = "fsscanner"
 version = "0.4.0"
-source = "git+https://github.com/witold-k/fsscanner?rev=9fffd1fe72463249bcf8b407ca803529fcbea50e#9fffd1fe72463249bcf8b407ca803529fcbea50e"
+source = "git+https://github.com/witold-k/fsscanner?rev=e078679069008e1fc0d51a524e33c20d8590ac1a#e078679069008e1fc0d51a524e33c20d8590ac1a"
 dependencies = [
  "crossbeam-channel",
  "serde",
@@ -229,7 +223,6 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "pdf_to_text"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "fsscanner",
  "postcard",
  "roxmltree",

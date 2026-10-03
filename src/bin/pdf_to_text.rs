@@ -1,4 +1,4 @@
-use anyhow::Result;
+use pdf_to_text::error::{Error, Result};
 
 use fsscanner::fsscanner_mt;
 use pdf_to_text::config::Config;
@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         let mut child = start_service(&config, backend)?;
         let status = child.wait()?;
         if !status.success() {
-            anyhow::bail!("{} service exited with status {status}", backend);
+            return Err(Error::ServiceFailed(status));
         }
         return Ok(());
     }
@@ -65,10 +65,10 @@ fn main() -> Result<()> {
         "md",
         workers,
         move |input, output| {
-            process_pdf_to_text(&worker_config, backend, input, output).map_err(Into::into)
+            process_pdf_to_text(&worker_config, backend, input, output).map_err(|_| fsscanner::Error::Callback("PDF conversion failed"))
         },
     )
-    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    .map_err(|_| Error::FsScanner)?;
 
     //
     // Stage 2: text -> per-document token artifact
@@ -83,12 +83,12 @@ fn main() -> Result<()> {
         move |_pdf, token_output| {
             let text_input = token_output.with_extension("md");
             if fsscanner_mt::needs_update(&text_input, token_output)? {
-                process_text_to_token(&text_input, token_output).map_err(|error| error.to_string())?;
+                process_text_to_token(&text_input, token_output).map_err(|_| fsscanner::Error::Callback("token conversion failed"))?;
             }
             Ok(())
         },
     )
-    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    .map_err(|_| Error::FsScanner)?;
 
     //
     // Stage 3: per-document token artifacts -> merged corpus database
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
 
     let token_db_output = PathBuf::from(output_root).join("token_db.tdb");
     if fsscanner_mt::dir_needs_update(output_root, "tok", &token_db_output)
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+        .map_err(|_| Error::FsScanner)?
     {
         println!("token merge -> {}", token_db_output.display());
 
@@ -106,9 +106,9 @@ fn main() -> Result<()> {
             output_root,
             "tok",
             "unused",
-            |db, input, _| process_join_token(db, input).map_err(Into::into),
+            |db, input, _| process_join_token(db, input).map_err(|_| fsscanner::Error::Callback("token merge failed")),
         )
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        .map_err(|_| Error::FsScanner)?;
 
         token_db.save(&token_db_output)?;
     }

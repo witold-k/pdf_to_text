@@ -31,7 +31,9 @@ fn tokenization_preserves_document_order_and_repetition() {
     let mut db = TokenDb::new();
     let tokens = tokenize(&mut db, "a a b a").unwrap();
 
-    assert_eq!(tokens, vec![0, 0, 1, 0]);
+    let a = db.id("a").unwrap();
+    let b = db.id("b").unwrap();
+    assert_eq!(tokens, vec![a, a, b, a]);
     assert_eq!(db.get_by_token("a").unwrap().count(), 3);
     assert_eq!(db.get_by_token("b").unwrap().count(), 1);
 }
@@ -46,9 +48,13 @@ fn process_writes_separate_token_stream_and_lookup_database() {
 
     process_text_to_token(&input, &token_output, &db_output).unwrap();
 
-    assert_eq!(load_token_stream(&token_output).unwrap(), vec![0, 0, 1, 0]);
+    let tokens = load_token_stream(&token_output).unwrap();
 
     let db = TokenDb::load(&db_output).unwrap();
+    let a = db.id("a").unwrap();
+    let b = db.id("b").unwrap();
+    assert_eq!(tokens, vec![a, a, b, a]);
+
     assert_eq!(db.get_by_token("a").unwrap().count(), 3);
     assert_eq!(db.get_by_token("b").unwrap().count(), 1);
 
@@ -102,7 +108,7 @@ fn global_stream_maps_local_ids_through_token_text() {
     let b = local_db.insert("b").unwrap();
     let a = local_db.insert("a").unwrap();
     local_db.save(&local_db_path).unwrap();
-    save_token_stream(&local_tok_path, &[b.get(), a.get(), b.get()]).unwrap();
+    save_token_stream(&local_tok_path, &[b, a, b]).unwrap();
 
     let mut global_db = TokenDb::new();
     let a_global = global_db.insert("a").unwrap();
@@ -118,7 +124,7 @@ fn global_stream_maps_local_ids_through_token_text() {
 
     assert_eq!(
         load_token_stream(&global_tok_path).unwrap(),
-        vec![b_global.get(), a_global.get(), b_global.get()]
+        vec![b_global, a_global, b_global]
     );
 
     fs::remove_dir_all(dir).unwrap();
@@ -134,7 +140,9 @@ fn global_stream_rejects_unknown_local_id() {
     let mut local_db = TokenDb::new();
     local_db.insert("a").unwrap();
     local_db.save(&local_db_path).unwrap();
-    save_token_stream(&local_tok_path, &[1]).unwrap();
+    // TokenId is transparently encoded as its u32 index. Write an invalid
+    // index directly to verify that the stream is checked against local_db.
+    fs::write(&local_tok_path, postcard::to_allocvec(&[1_u32]).unwrap()).unwrap();
 
     let mut global_db = TokenDb::new();
     global_db.insert("a").unwrap();
@@ -162,7 +170,7 @@ fn global_stream_rejects_token_missing_from_global_database() {
     let mut local_db = TokenDb::new();
     let local_id = local_db.insert("local-only").unwrap();
     local_db.save(&local_db_path).unwrap();
-    save_token_stream(&local_tok_path, &[local_id.get()]).unwrap();
+    save_token_stream(&local_tok_path, &[local_id]).unwrap();
 
     let global_db = TokenDb::new();
 

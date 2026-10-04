@@ -3,27 +3,27 @@ use simplelexer::chunkkind::ChunkKind;
 use simplelexer::quotelexer::QuoteLexer;
 use std::fs;
 use std::path::Path;
-use token_db::TokenDb;
+use token_db::{TokenDb, TokenId};
 
-pub fn save_token_stream(path: &Path, tokens: &[u32]) -> Result<()> {
+pub fn save_token_stream(path: &Path, tokens: &[TokenId]) -> Result<()> {
     let data = postcard::to_allocvec(tokens)?;
     fs::write(path, data)?;
     Ok(())
 }
 
-pub fn load_token_stream(path: &Path) -> Result<Vec<u32>> {
+pub fn load_token_stream(path: &Path) -> Result<Vec<TokenId>> {
     let data = fs::read(path)?;
     Ok(postcard::from_bytes(&data)?)
 }
 
-pub fn tokenize(db: &mut TokenDb, text: &str) -> Result<Vec<u32>> {
+pub fn tokenize(db: &mut TokenDb, text: &str) -> Result<Vec<TokenId>> {
     let lexer = QuoteLexer::new(text);
 
     lexer
         .lex()?
         .into_iter()
         .filter(|c| c.kind != ChunkKind::Whitespace)
-        .map(|c| db.insert(c.text).map(|id| id.get()).map_err(Into::into))
+        .map(|c| db.insert(c.text).map_err(Into::into))
         .collect()
 }
 
@@ -70,7 +70,6 @@ pub fn process_token_to_global(
         .map(|(_, entry)| {
             global_db
                 .id(entry.text())
-                .map(|id| id.get())
                 .ok_or_else(|| Error::MissingGlobalToken(entry.text().to_owned()))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -80,7 +79,7 @@ pub fn process_token_to_global(
         .into_iter()
         .map(|id| {
             local_to_global
-                .get(id as usize)
+                .get(id.get() as usize)
                 .copied()
                 .ok_or(Error::InvalidTokenId(id))
         })

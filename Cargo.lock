@@ -435,9 +435,10 @@ dependencies = [
 [[package]]
 name = "token_db"
 version = "0.1.0"
-source = "git+https://github.com/witold-k/token_db?rev=c607049f343410e7d0f7e4792af93274fbc90c0e#c607049f343410e7d0f7e4792af93274fbc90c0e"
+source = "git+https://github.com/witold-k/token_db?rev=a347088581b40d53f1b0d288004e5be771736e9d#a347088581b40d53f1b0d288004e5be771736e9d"
 dependencies = [
  "rustc-hash",
+ "serde",
  "tempfile",
 ]
 

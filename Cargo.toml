@@ -17,7 +17,7 @@ simplelexer = { version = "0.1.0", git = "https://github.com/witold-k/simplelexe
 fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", rev = "57d24691489d5ccbb9b6587faca97ed8429055a5" }
 
 # -- database ----------------------------------------------------------------
-token_db = { version = "0.1.0", git = "https://github.com/witold-k/token_db", rev = "c607049f343410e7d0f7e4792af93274fbc90c0e" }
+token_db = { version = "0.1.0", git = "https://github.com/witold-k/token_db", rev = "a347088581b40d53f1b0d288004e5be771736e9d" }
 
 # -- rest --------------------------------------------------------------------
 ureq = { version = "3.4", default-features = false, features = ["multipart"] }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Witold Kaminski
+
 use crate::error::Result;
 use roxmltree::{Document, Node};
 use serde::Serialize;

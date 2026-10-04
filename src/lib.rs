@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Witold Kaminski
+
 pub mod config;
 pub mod error;
 pub mod process_pdf_to_text;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Witold Kaminski
+
 use std::fmt;
 use std::io;
 use std::process::ExitStatus;

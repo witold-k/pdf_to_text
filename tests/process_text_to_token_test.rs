@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Witold Kaminski
+
 use pdf_to_text::process_text_to_token::{
     load_token_stream, process_join_token, process_text_to_token, process_token_to_global,
     save_token_stream, tokenize,

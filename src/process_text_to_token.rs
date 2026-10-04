@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Witold Kaminski
+
 use crate::error::{Error, Result};
 use simplelexer::chunkkind::ChunkKind;
 use simplelexer::quotelexer::QuoteLexer;

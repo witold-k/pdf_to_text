@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Witold Kaminski
 
-use pdf_to_text::pdf2json::GrobidConverter;
+use pdf_to_text_wrapper::pdf2json::GrobidConverter;
 
 const TEI: &str = r#"
 <TEI xmlns="http://www.tei-c.org/ns/1.0">

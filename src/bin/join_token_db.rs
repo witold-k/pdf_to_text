@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Witold Kaminski
 
-use pdf_to_text::error::{Error, Result};
-
 use fsscanner::fsscanner_mt;
-use pdf_to_text::process_text_to_token::process_join_token;
 use std::path::PathBuf;
 use token_db::TokenDb;
+use pdf_to_text_wrapper::error::{Error, Result};
+use pdf_to_text_wrapper::process_text_to_token::process_join_token;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();

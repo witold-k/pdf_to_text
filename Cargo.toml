@@ -1,5 +1,5 @@
 [package]
-name = "pdf_to_text"
+name = "pdf_to_text_wrapper"
 version = "0.1.0"
 edition = "2024"
 
@@ -14,7 +14,7 @@ roxmltree = "0.21"
 simplelexer = { version = "0.1.0", git = "https://github.com/witold-k/simplelexer", rev = "9b04c15e393feac77c621dd72b35bc74607054a9" }
 
 # -- fsscan ------------------------------------------------------------------
-fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", rev = "57d24691489d5ccbb9b6587faca97ed8429055a5" }
+fsscanner = { version = "0.4.0", git = "https://github.com/witold-k/fsscanner", rev = "cb034d15865d20b5102c6ec5a12f8944e2e11058" }
 
 # -- database ----------------------------------------------------------------
 token_db = { version = "0.1.0", git = "https://github.com/witold-k/token_db", rev = "a347088581b40d53f1b0d288004e5be771736e9d" }

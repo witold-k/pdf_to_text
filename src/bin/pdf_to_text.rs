@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Witold Kaminski
 
-use pdf_to_text::error::{Error, Result};
-
 use fsscanner::fsscanner_mt;
-use pdf_to_text::config::Config;
-use pdf_to_text::process_pdf_to_text::{process_pdf_to_text, PdfBackend};
-use pdf_to_text::process_text_to_token::{
+use pdf_to_text_wrapper::config::Config;
+use pdf_to_text_wrapper::process_pdf_to_text::{process_pdf_to_text, PdfBackend};
+use pdf_to_text_wrapper::process_text_to_token::{
     process_join_token, process_text_to_token, process_token_to_global,
 };
-use pdf_to_text::service::start_service;
+use pdf_to_text_wrapper::error::{Error, Result};
+use pdf_to_text_wrapper::service::start_service;
 use std::path::PathBuf;
 use token_db::TokenDb;
 
